@@ -33,16 +33,19 @@ class tokenizer {
 
 tokenizer* createTokenizer(std::string name) {
     fileReader* fr = startReader(name);
+    
     if (fr) {
         return new tokenizer(fr);
     } else return nullptr;
 }
 
-tokenizer::tokenizer(fileReader* fr) {
+tokenizer::tokenizer(fileReader* fr) : lastHold("", {0,0}, undefinedTok) {
     this->fr = fr;
     this->eot = false;
+    th = typeHandler();
     last = nullptr;
     fill(TOKEN_BUF_SIZE);
+    
 }
 
 tokenizer::~tokenizer() {
@@ -53,21 +56,35 @@ tokenizer::~tokenizer() {
     }
 }
 
+typeHandler* tokenizer::getTypeHandler() {
+    return &th;
+}
+
 token* tokenizer::lookAhead(int64_t index) {
-    if (index > tokens.size() - 1) {
+    int a = 5;
+    if (index > tokens.size() - 1 || tokens.size() == 0) {
         return nullptr; // looking to far ahead
-    } else {
-        return tokens.at(index);
+    } 
+    token* toRet = tokens.at(index);
+    if (toRet->type == identTok && th.searchType(toRet->str, 0)) {
+        toRet->type = typeTok;
+        toRet->subType = undefinedSub;
     }
+    return toRet;
+    
 }
 
 token* tokenizer::next() {
     if (tokens.size() >= 1) {
         token* toRet = tokens.at(0);
+        if (toRet->type == identTok && th.searchType(toRet->str, 0)) {
+            toRet->type = typeTok;
+            toRet->subType = undefinedSub;
+        }
         tokens.pop_front();
         if (!fr->isEof() && tokens.size() < TOKEN_BUF_SIZE) fill(9);
-        if (last != nullptr) delete last;
-        last = toRet;
+        if (last != nullptr) last = &lastHold;
+        lastHold = *toRet;
         return toRet;
     } else return nullptr;
 }
@@ -80,7 +97,16 @@ void tokenizer::fill(int64_t numToFill) {
     for (int i = 0; i < numToFill && !fr->isEof(); i++) {
         parseTok();
     }
-    if (fr->isEof()) eot = true;
+    if (fr->isEof() && !eot) {
+        eot = true;
+        charPos pos = fr->getCharPos();
+        pos.col = pos.col + 1;
+        token* eotToken = new token("", pos, eofTok);
+        
+
+        tokens.push_back(eotToken);
+    }
+    
 }
 
 void tokenizer::parseTok() {
@@ -91,6 +117,13 @@ void tokenizer::parseTok() {
         parseWord();
     } else if (nextChar >= '0' && nextChar <= '9') {
         parseLit();
+    } else if (nextChar == '.') {
+        char nextNextChar = fr->lookAhead(1);
+        if (nextChar >= '0' && nextChar <= '9') {
+            parseLit();
+        } else {
+            tryParseOp(nextChar);
+        }
     } else if (tryParseOp(nextChar)) {
     } else if (tryParseDelim(nextChar)) {
     } else if (nextChar == '\0') {
@@ -117,17 +150,26 @@ void tokenizer::parseWord() {
         }
     }
     token* newTok;
+    auto lookup = keywords.find(word);
     // check if string is keyword
-    if (false /* is keyword*/) {
-        newTok = new keywordTok(word, start);
+    if (lookup != keywords.end()) {
+        newTok = new token(word, start, keywordTok);
+        newTok->subType = lookup->second;
     } else {
-        newTok = new identTok(word, start);
+
+        newTok = new token(word, start, identTok);
+        newTok->subType = undefinedSub;
+        
+
+        
     }
     tokens.push_back(newTok);
 }
 
 void tokenizer::parseLit() {
-    litTok* tok = new litTok("", fr->getCharPos());
+    // needs rewrite for other lits
+    token* tok = new token("", fr->getCharPos(), intTok);
+    tok->subType = undefinedSub;
     tok->str.push_back(fr->lookAhead(0));
     fr->next();
     while (!fr->isEof()) {
@@ -139,7 +181,6 @@ void tokenizer::parseLit() {
             break;
         }
     }
-    tok->val = std::stoi(tok->str);
     tokens.push_back(tok);
 }
 
@@ -149,55 +190,64 @@ bool tokenizer::tryParseOp(char in) {
         
         case '*':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("*=");
+                    tok->subType = opAssTimes;
                 } else {
                     tok->str.push_back('*');
+                    tok->subType = opStar;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '/':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("/=");
+                    tok->subType = opAssDiv;
                 } else {
                     tok->str.push_back('/');
+                    tok->subType = opBinaryDiv;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '%':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("%=");
+                    tok->subType = opAssMod;
                 } else {
                     tok->str.push_back('%');
+                    tok->subType = opBinaryMod;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '+':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '+') {
                     fr->next();
                     tok->str.append("++");
+                    tok->subType = opInc;
                 } else if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("+=");
+                    tok->subType = opAssAdd;
                 } else {
                     tok->str.push_back('+');
+                    tok->subType = opPlus;
                 }
                 tokens.push_back(tok);
                 return true;
@@ -205,19 +255,23 @@ bool tokenizer::tryParseOp(char in) {
 
         case '-':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '-') {
                     fr->next();
                     tok->str.append("--");
+                    tok->subType = opDec;
                 } else if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("-=");
+                    tok->subType = opAssMinus;
                 } else if (fr->lookAhead(0) == '>') {
                     fr->next();
                     tok->str.append("->");
+                    tok->subType = opPointerElementSelect;
                 } else {
                     tok->str.push_back('-');
+                    tok->subType = opMinus;
                 }
                 tokens.push_back(tok);
                 return true;
@@ -225,128 +279,147 @@ bool tokenizer::tryParseOp(char in) {
 
         case '=':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("==");
+                    tok->subType = opEq;
                 } else {
                     tok->str.push_back('=');
+                    tok->subType = opAssign;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '>':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append(">=");
+                    tok->subType = opGreaterThenEq;
                 } else if (fr->lookAhead(0) == '>') {
                     fr->next();
                     tok->str.append(">>");
+                    tok->subType = opShiftRight;
                 } else {
                     tok->str.push_back('>');
+                    tok->subType = opGreaterThen;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '<':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("<=");
+                    tok->subType = opLessThenEq;
                 } else if (fr->lookAhead(0) == '<') {
                     fr->next();
                     tok->str.append("<<");
+                    tok->subType = opShiftLeft;
                 } else {
                     tok->str.push_back('<');
+                    tok->subType = opLessThen;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '!':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '=') {
                     fr->next();
                     tok->str.append("!=");
+                    tok->subType = opNotEq;
                 } else {
                     tok->str.push_back('!');
+                    tok->subType = opLogicalNot;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '&':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '&') {
                     fr->next();
                     tok->str.append("&&");
+                    tok->subType = opLogicalAnd;
                 } else {
                     tok->str.push_back('&');
+                    tok->subType = opBitwiseAnd;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '|':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 if (fr->lookAhead(0) == '|') {
                     fr->next();
                     tok->str.append("||");
+                    tok->subType = opLogicalOr;
                 } else {
                     tok->str.push_back('|');
+                    tok->subType = opBitwiseOr;
                 }
                 tokens.push_back(tok);
                 return true;
             }
         case '~':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 tok->str.push_back('~');
                 tokens.push_back(tok);
+                tok->subType = opBitwiseNot;
                 return true;
             }
         case '^':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 tok->str.push_back('^');
                 tokens.push_back(tok);
+                tok->subType = opBitwiseXor;
                 return true;
             }
         case '?':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 tok->str.push_back('?');
                 tokens.push_back(tok);
+                tok->subType = opIf;
                 return true;
             }
         case ':':
             if (fr->lookAhead(0) == ':') {
                 return false;
             } else {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 tok->str.push_back('~');
                 tokens.push_back(tok);
+                tok->subType = opElse;
                 return true;
             }
         case '.':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), operationTok);
                 fr->next();
                 tok->str.push_back('.');
                 tokens.push_back(tok);
+                tok->subType = opRefElementSelect;
                 return true;
             }
         default:
@@ -357,27 +430,85 @@ bool tokenizer::tryParseOp(char in) {
 bool tokenizer::tryParseDelim(char in) {
     switch (in) {
         case '(':
-        case '{':
-        case '[':
-        case ')':
-        case '}':
-        case ']':
-        case ';':
-        case ',':
             {
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), delimTok);
                 fr->next();
                 tok->str.push_back(in);
+                tok->subType = delimLeftPar;
+                tokens.push_back(tok);
+                return true;
+            }
+        case '{':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimLeftCurly;
+                tokens.push_back(tok);
+                return true;
+            }
+        case '[':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimLeftBrac;
+                tokens.push_back(tok);
+                return true;
+            }
+        case ')':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimRightPar;
+                tokens.push_back(tok);
+                return true;
+            }
+        case '}':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimRightCurly;
+                tokens.push_back(tok);
+                return true;
+            }
+        case ']':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimRightBrac;
+                tokens.push_back(tok);
+                return true;
+            }
+        case ';':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimSemiCol;
+                tokens.push_back(tok);
+                return true;
+            }
+        case ',':
+            {
+                token* tok = new token("", fr->getCharPos(), delimTok);
+                fr->next();
+                tok->str.push_back(in);
+                tok->subType = delimComma;
                 tokens.push_back(tok);
                 return true;
             }
         case ':':
             {   
                 // we can only get here if :: is next, op parse would grab it otherwise
-                operationTok* tok = new operationTok("", fr->getCharPos());
+                token* tok = new token("", fr->getCharPos(), delimTok);
                 fr->next();
                 fr->next();
                 tok->str.append("::");
+                tok->subType = opScopeRes;
                 tokens.push_back(tok);
                 return true;
             }

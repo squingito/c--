@@ -1,5 +1,1 @@
-
-
-int main(int yes) {
-    int y *= a&b++-c;
-}
+result = obj->items[i + 1] * -arr[j]->value + *ptr->next / (count - 3) <= limit && flag || other != x = y

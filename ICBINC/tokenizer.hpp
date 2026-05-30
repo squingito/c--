@@ -3,6 +3,7 @@
 #define TOKENIZER_HEADER_GUARD
 
 #include "tokens.hpp"
+#include "typeHandler.hpp"
 #include <deque>
 #define TOKEN_BUF_SIZE 4
 
@@ -14,6 +15,7 @@ class tokenizer {
         token* lookAhead(int64_t);
         token* next();
         token* prev();
+        typeHandler* getTypeHandler();
 
     private:
         void parseTok();
@@ -29,6 +31,8 @@ class tokenizer {
         fileReader* fr;
         bool eot;
         token* last;
+        token lastHold;
+        typeHandler th;
 
 
 

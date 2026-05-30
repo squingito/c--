@@ -60,6 +60,7 @@ int64_t logger::close() {
     if (closed) return LOGGER_CLOSED;
     stream.close();
     closed = true;
+    return 0;
 }
 
 logger* loggerStarter(std::string name) {

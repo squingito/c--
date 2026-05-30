@@ -1,15 +1,40 @@
-#include "tokenizer.hpp";
+#include "tokenizer.hpp"
+#include "syntaxBlocks.hpp"
+#include <exception>
+#include "unexpectedTokException.hpp"
+#include <vector>
+
+#ifndef PARSER_HEADER_GUARD
+#define PARSER_HEADER_GUARD
 
 
 class parser {
     public:
+        parser(tokenizer* tokenizer);
+        ~parser();
+        static parser* createParser(std::string fileName);
+        valueBlockSB* parseTest() {
+            return parseExpression(0);
+        }
+
 
     private:
-        tokenizer tokenReader;
+        tokenizer* tokenReader;
+        typeHandler* th;
+
+        int64_t getPrecedence(tokenSubType);
+        valueBlockSB* parseRawVal();
+        valueBlockSB* parsePostFixVal();
+        valueBlockSB* parsePreFixVal();
+        valueBlockSB* parseExpression(int64_t);
+
+
 
         
 
 };
+
+
 
 /*
 
@@ -122,3 +147,5 @@ RawVal
 
 
 */
+
+#endif
