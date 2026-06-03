@@ -26,7 +26,11 @@ class parser {
         valueBlockSB* parseRawVal();
         valueBlockSB* parsePostFixVal();
         valueBlockSB* parsePreFixVal();
-        valueBlockSB* parseExpression(int64_t);
+        valueBlockSB* parseExpression(int64_t, bool skipComma=false);
+        std::vector<valueBlockSB*>* parseCall();
+        valueBlockSB* parseType();
+        
+
 
 
 

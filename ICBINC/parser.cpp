@@ -120,7 +120,13 @@ valueBlockSB* parser::parsePreFixVal() {
             last->valBlock = temp;
             last = temp;
         } else if (tokSubType == delimLeftPar) {
-            break;
+            token* lahead2 = tokenReader->lookAhead(1);
+            if (lahead2->type == typeTok) {
+                tokenReader->next();
+                // make a parse type function
+            } else {
+                break;
+            }
         } else if (tokSubType == kwNew || tokSubType == kwDelete) {
             // new and delete
         } else break;
@@ -194,26 +200,31 @@ int64_t parser::getPrecedence(tokenSubType op) {
     }
 }
 
-valueBlockSB* parser::parseExpression(int64_t minPres) {
+valueBlockSB* parser::parseExpression(int64_t minPres, bool skipComma=false) {
     valueBlockSB* left = parsePreFixVal();
 
     while (1) {
         token* op = tokenReader->lookAhead(0);
 
         int64_t pres = getPrecedence(op->subType);
-        if (pres < minPres) break;
+        if (pres < minPres || (skipComma && pres == 1)) break;
 
         tokenReader->next();
         valueBlockSB* right;
 
         if (pres == 2) {
-            right = parseExpression(pres);
+            right = parseExpression(pres, skipComma);
         } else {
-            right = parseExpression(pres + 1);
+            right = parseExpression(pres + 1, skipComma);
         }
 
         left = new binaryOpSB(left, op, right);
     }
 
     return left;
+}
+
+valueBlockSB* parser::parseType() {
+    token* lahead = tokenReader->lookAhead(0);
+    if (lahead->subType != delimRightBrac) throw unexpectedTokException(lahead, typeTok, undefinedSub, "");
 }

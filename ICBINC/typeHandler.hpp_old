@@ -142,12 +142,11 @@ public:
     typeHandler();
     ~typeHandler();
 
-    valueType* getNamedType(std::string);
-    valueType* getPointerType(valueType*);
-    valueType* getArrayType(valueType*, uint64_t);
-    valueType* getFunctionType(valueType* ret, std::vector<valueType*> args);
-
-
+    valueType* searchType(std::string, int64_t pointerLev);
+    valueType* searchType(valueType* retType, std::vector<valueType*> argsType, int64_t pointerLevel);
+    int64_t insert(std::string, int64_t pointerLev, valueType* mapping, bool exist);
+    int64_t insert(valueType* retType, std::vector<valueType*> argsType, int64_t pointerLevel, valueType*);
+    int64_t alius(std::string, int64_t, valueType* mapping);
 private:
     std::unordered_map<typeKey,valueType*, typeKeyHash> map;
     std::vector<valueType*> uniqueTypes;
